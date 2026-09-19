@@ -27,6 +27,7 @@ cfg = {
     "trading_mode": "PAPER",
     "market_data": {
         "source": "mock",
+        "history_request_gap_seconds": 0,
         "loop_tick_seconds": 1,
         "boundary_grace_seconds": 5,
         "ltp_poll_seconds": 30,
@@ -115,3 +116,19 @@ print("OK: scanner rows =", len(state["scanner"]),
       "| journal =", len(journal),
       "| alerts =", len(state["alerts"]),
       "| partial =", len(state["avwap_health"]["partial"]))
+
+# The research panel receives real service/engine payloads too, not hand-built
+# approximations. It uses a separate store and explicit synthetic prices.
+from backtest.service import BacktestService
+from common.config import DEFAULTS
+import copy
+bt_cfg = copy.deepcopy(DEFAULTS)
+bt_cfg["backtest"]["output_dir"] = str(TMP / "backtests")
+service = BacktestService(bt_cfg)
+bt_run = service.run_sync({"source": "demo", "start": "2026-09-15", "end": "2026-09-15",
+                           "history_start": "2026-09-14", "symbols": ["RELIANCE", "NIFTY"]})
+assert bt_run["status"] == "completed", bt_run
+(TMP / "backtest_options.json").write_text(json.dumps(service.options()))
+(TMP / "backtest_runs.json").write_text(json.dumps({"runs": [bt_run]}))
+(TMP / "backtest_result.json").write_text(json.dumps(service.result(bt_run["id"])))
+app.db.close()

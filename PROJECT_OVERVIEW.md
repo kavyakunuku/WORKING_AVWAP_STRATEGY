@@ -1,6 +1,8 @@
 # AVWAP NIFTY F&O Option-Selling System — Project Overview
 
-**Status:** v2026-09-17a · Python 3.10+ · ~7,000 lines of Python (≈5,400 core runtime, ≈1,600 tests + ops tools) plus ~49 KB of hand-rolled dashboard JavaScript · 72 automated tests, all passing · running in **PAPER** mode (real Dhan market data, no live orders)
+**Status:** v2026-09-19a · Python 3.10+ · PAPER by default · isolated backtest engine + dashboard/CLI · automated Python and 13-page dashboard render checks.
+
+**Current feature update:** the scanner has a hard ceiling of the owner's 40 stocks plus NIFTY/BANKNIFTY (`common/scanner.py`); existing off-list positions remain exit-monitored. Backtesting reuses the production signal rules with isolated state, Dhan fixed-contract history/cache, fees/slippage and exports. **Dhan runs are current-master, window-anchored research—not verified lifetime/point-in-time expired-options backtests.** See [BACKTESTING.md](BACKTESTING.md) for exact coverage limits and commands. Module line counts below are approximate legacy reference figures.
 
 ---
 
@@ -21,20 +23,20 @@ Core design principles:
 
 ### 2.1 Instruments
 - **Sell-to-open only** (short options). The only buy is a **buy-to-close** of an existing short.
-- Universe: a **curated list of ~67 highly liquid NSE F&O stocks** plus **NIFTY** and **BANKNIFTY** index options.
+- Universe: a **curated list of 40 approved NSE F&O stocks** plus **NIFTY** and **BANKNIFTY** index options.
 - **Expiry legs per underlying:**
-  - NIFTY: **current + next weekly expiry** (two legs)
+  - NIFTY: **current + next weekly expiry** when `weekly_expiries: {"NIFTY": 2}` is configured; otherwise the monthly rule
   - BANKNIFTY and all stocks: **monthly expiry**, with the standard premium-preservation switch on the **24th** of the month
   - Expiry dates always come from the exchange/Dhan (live expiry lists), never assumed.
 
 ### 2.2 Scanner universe (what is monitored)
-- Per underlying, per expiry leg: **ATM + 4 ITM strikes on each side** (configurable via `strategy.itm_strikes_per_side`).
-  - 9 unique strikes, **10 monitored contracts** (ATM contributes both a CE and a PE).
+- Per underlying, per expiry leg: **ATM + 6 ITM strikes on each side** (configurable via `strategy.itm_strikes_per_side`).
+  - 13 unique strikes, **14 monitored contracts** (ATM contributes both a CE and a PE).
   - Cheaper stocks have finer strike grids, pricier stocks coarser — the window is always computed from that leg's **real chain strikes**, never an assumed step.
 - **ATM tracking follows the underlying's live price**, never option LTPs:
   - Stocks: NSE equity LTP via the quote API, 30 s cadence
   - Indices: option-chain spot, 30 s cadence (shared 3 s pacing)
-- **Existing open positions keep being monitored** even after they fall outside the ATM±4 window (position universe is a permanent union).
+- **Existing open positions keep being monitored** even after they fall outside the ATM±N window (position universe is a permanent union).
 
 ### 2.3 Entry (short)
 A **true cross below AVWAP on completed 15-minute candles only** (no intracandle evaluation):
@@ -111,7 +113,7 @@ current_close > current_avwap   →  BUY TO CLOSE
 | `strategy/rules.py` | 39 | **The only strategy rules** — entry cross + exit close. Nothing else may be added without an explicit strategy revision. |
 | `strategy/avwap.py` | 156 | AVWAP accumulator: anchor, typical-price weighting, persistence, PARTIAL-history flags. |
 | `strategy/engine.py` | 174 | `SignalEngine`: per-candle rule evaluation, signal dedup, dashboard status, last-signal tracking. |
-| `market/universe.py` | 284 | Per-underlying, per-expiry-leg universe: ATM detection from real chain strikes, CE/PE ±4-ITM windows, scanner + position contract sets, ATM re-tracking. |
+| `market/universe.py` | 284 | Per-underlying, per-expiry-leg universe: ATM detection from real chain strikes, CE/PE configurable ITM windows, scanner + position contract sets, ATM re-tracking. |
 | `market/candles.py` | 172 | 15-min candle windowing (session-aware IST windows, boundary grace). |
 | `dhan/client.py` | 141 | REST client: auth headers (`access-token`, `client-id`), JSON, retries with backoff on 429/5xx, typed `DhanAPIError`. |
 | `dhan/market_data.py` | 218 | Quote API (batches ≤1000 ids, NSE_FNO / NSE_EQ) and intraday 15-min candles (5-yr depth) with pacing + retries. |
@@ -130,11 +132,13 @@ current_close > current_avwap   →  BUY TO CLOSE
 | `common/models.py` | 129 | Dataclasses: `Candle`, `OptionContract`, `Quote`, `Signal`, action constants. |
 | `common/utils.py` | 144 | IST time handling (ZoneInfo with fixed UTC+05:30 fallback for Windows), session state (PRE_OPEN/OPEN/CLOSED), candle-window math, logging setup. |
 | `common/config.py` | 131 | Config loader + `cfg_get` dotted-path access. |
-| `dashboard/app.py` | 1281 | Flask dashboard (port 8000) + ~49 KB embedded vanilla JS. **12 pages** across two zones: *Live Trading* (Overview/Command Center, Scanner, Contract detail with canvas candlestick+AVWAP chart, Position Command Center, Signal Center with full explainability chain, Orders with raw Dhan responses) and *Data + Operations* (Data Health, System Health, Alert Center, Journal with filters + CSV/JSON export, Restart/Recovery, read-only Settings). REST: `/api/state`, `/api/contract/<sec>`, `/api/journal`, `/api/control` (gated by `dashboard.control_token`; actions: pause/resume, emergency stop/release, exit-all, **close-position**, **schedule-avwap-rebuild**). No CDN, no framework, no WebSocket. |
+| `dashboard/app.py` | 1281 | Flask dashboard (port 8000) + ~49 KB embedded vanilla JS. **13 pages** across two zones: *Live Trading* (Overview/Command Center, Scanner, Contract detail with canvas candlestick+AVWAP chart, Position Command Center, Signal Center with full explainability chain, Orders with raw Dhan responses) and *Data + Operations* (Data Health, System Health, Alert Center, Journal with filters + CSV/JSON export, Restart/Recovery, read-only Settings). REST: `/api/state`, `/api/contract/<sec>`, `/api/journal`, `/api/control` (gated by `dashboard.control_token`; actions: pause/resume, emergency stop/release, exit-all, **close-position**, **schedule-avwap-rebuild**). No CDN, no framework, no WebSocket. |
 | `tools/check_avwap.py` | — | **Read-only AVWAP auditor**: lists anchor dates + PARTIAL flags; deep-dive per symbol (fresh full-history VWAP vs stored, 5-day-fallback simulation, diagnosis). |
 | `tools/reanchor_avwap.py` | — | AVWAP repair: delete + full rebuild for late-anchored contracts (`--all`, symbol filter, `--dry`). |
 | `tools/export_to_csv.py` / `fix_position_times.py` | — | Data export / maintenance utilities. |
-| `tests/` | 1,300+ | **72 tests**: AVWAP math, candle windowing, engine signal logic + dedup, universe/ATM (incl. multi-expiry & index legs), risk vetoes, paper fills, **restart recovery**, universe filtering, plus V2: candle persistence (direct + full main-loop path), REST telemetry (429 retry, error counters), journal filters, manual close, rebuild queue, dashboard payload shapes, contract/journal endpoints + control auth. |
+| `backtest/` | ~1,200 | Isolated chronological replay, fixed-contract Dhan loader/cache, deterministic demo, shared rule/risk execution, reports, background jobs and CLI. See BACKTESTING.md for data limitations. |
+| `dashboard/backtesting.py` | ~100 | Reusable backtest API and standalone research dashboard; no trading-engine startup. |
+| `tests/` | 1,300+ | **137 tests**: AVWAP math, candle windowing, engine signal logic + dedup, universe/ATM (incl. multi-expiry & index legs), risk vetoes, paper fills, **restart recovery**, universe filtering, plus V2: candle persistence (direct + full main-loop path), REST telemetry (429 retry, error counters), journal filters, manual close, rebuild queue, dashboard payload shapes, contract/journal endpoints + control auth. |
 
 ---
 
@@ -176,7 +180,7 @@ current_close > current_avwap   →  BUY TO CLOSE
 
 ## 8. Dashboard (Flask, `http://localhost:8000`)
 
-12 pages in two zones — **LIVE TRADING** and **DATA + OPERATIONS** — plus a persistent header (mode banner, market session, engine status, build). Single page, hash-free client-side navigation; state polled every 3 s; hand-rolled canvas charts, no CDN, no framework, no WebSocket.
+13 pages across trading, research, data and operations zones — **LIVE TRADING** and **DATA + OPERATIONS** — plus a persistent header (mode banner, market session, engine status, build). Single page, hash-free client-side navigation; state polled every 3 s; hand-rolled canvas charts, no CDN, no framework, no WebSocket.
 
 **LIVE TRADING**
 - **Overview / Command Center** — today's P&L, open positions x/max, signals today, orders today, wins/losses, exposure, unrealized; market-status bar with session timeline + NIFTY/BANKNIFTY spots; system strip (last candle, next candle close, feed, DB, uptime).
@@ -187,6 +191,7 @@ current_close > current_avwap   →  BUY TO CLOSE
 - **Orders** — status table (SIGNAL → SENT → ACCEPTED → FILLED/REJECTED) with the **raw Dhan response** per order (expandable).
 
 **DATA + OPERATIONS**
+- **Backtesting** — Dhan/synthetic source selection, dates/symbols, warm-up, costs, progress/cancel, saved results, equity, trade history and exports. Every result exposes coverage assumptions; no live orders.
 - **Data Health** — per-feed status (LTP / option chain / candles / master / REST) with last-ok, latency, error counts; AVWAP integrity summary (complete / partial / failed); the partial contracts with **[SCHEDULE REBUILD]** (queued in kv, applied at next start — never under the live engine).
 - **System Health** — component status (engine, strategy, execution, database, dashboard), REST API stats (requests, 429s, errors by path), process CPU/RAM (optional `psutil`), heartbeats (engine, last candle, next close, polls, uptime).
 - **Alert / Incident Center** — currently-computed alerts with severities + incident history derived from the journal.
@@ -218,8 +223,8 @@ python main.py --mode LIVE --i-understand-live   # live (after the checklist!)
 
 ## 10. Testing & current status
 
-- **72 automated tests**, all green: AVWAP math & anchoring, candle windowing, signal rules + dedup, universe construction (multi-expiry, index legs, ATM re-tracking), risk vetoes, paper fills, restart recovery, plus the V2 dashboard layer (candle persistence, REST telemetry, journal filters, manual close, rebuild queue, payload shapes, contract/journal endpoints, control auth).
-- **Dashboard render-verified:** the served page is loaded in a headless DOM (jsdom) against payloads generated from a real mock `TraderApp`; all 12 pages render with zero JavaScript errors, and the scanner/quick-view/contract/close-button interactions are exercised.
+- **137 automated tests**, all green: AVWAP math & anchoring, candle windowing, signal rules + dedup, universe construction (multi-expiry, index legs, ATM re-tracking), risk vetoes, paper fills, restart recovery, plus the V2 dashboard layer (candle persistence, REST telemetry, journal filters, manual close, rebuild queue, payload shapes, contract/journal endpoints, control auth).
+- **Dashboard render-verified:** the served page is loaded in a headless DOM (jsdom) against payloads generated from a real mock `TraderApp`; all 13 pages render with zero JavaScript errors, and the scanner/quick-view/contract/close-button interactions are exercised.
 - **Validated live:** full-universe validation against real Dhan data; AVWAP anchoring verified against chart-anchored VWAPs (root cause of one divergence — silent 429-storm fallback to a late anchor — fixed with pacing, retries, and the permanent PARTIAL flag + repair tools).
 - **Known open item:** LTP column occasionally shows "–" in the scanner — diagnostic logging for the quote poll was added in v2026-09-16l to pinpoint the cause.
 
@@ -231,14 +236,14 @@ python main.py --mode LIVE --i-understand-live   # live (after the checklist!)
 | `market_data.source` | `dhan` / `mock` | `dhan` |
 | `market_data.loop_tick_seconds` | main-loop cadence | 1 |
 | `market_data.ltp_poll_seconds` | LTP/spot poll cadence | 30 |
-| `market_data.universe_stocks` | curated liquid-stock list (~67) | set |
+| `market_data.universe_stocks` | hard approved 40-stock ceiling (config may narrow) | set |
 | `market_data.universe_indices` | index underlyings | `["NIFTY","BANKNIFTY"]` |
-| `market_data.weekly_expiries` | weekly legs per index | `{"NIFTY": 2}` |
+| `market_data.weekly_expiries` | weekly legs per underlying (opt in with `{"NIFTY": 2}`) | `{}` |
 | `strategy.candle_interval_minutes` | signal timeframe | 15 |
-| `strategy.itm_strikes_per_side` | scanner width (ITM per side) | 4 |
+| `strategy.itm_strikes_per_side` | scanner width (ITM per side) | 6 |
 | `strategy.expiry_switch_day` | monthly switch day | 24 |
 | `risk.*` | quantity, max positions, max trades/day, max daily loss | set |
-| `paper.slippage_bps` | paper-fill slippage | 10 |
+| `paper.slippage_bps` | paper-fill slippage | 0 |
 | `dashboard.port` / `dashboard.control_token` | UI port / control gate | 8000 / — |
 | `storage.db_path` | SQLite path | `data/trader.db` |
 

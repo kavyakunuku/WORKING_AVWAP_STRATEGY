@@ -12,6 +12,8 @@ import copy
 import json
 import os
 
+from common.scanner import APPROVED_STOCKS, APPROVED_INDICES, configured_scanner
+
 DEFAULTS: dict = {
     "trading_mode": "PAPER",
     "dhan": {
@@ -31,8 +33,8 @@ DEFAULTS: dict = {
         "history_start": "month_start",
         "history_lookback_days_fallback": 5,
         "universe_refresh_minutes": 60,
-        "universe_stocks": [],
-        "universe_indices": [],
+        "universe_stocks": list(APPROVED_STOCKS),
+        "universe_indices": list(APPROVED_INDICES),
         "weekly_expiries": {},
         "mock": {
             "underlyings": ["MOCKA", "MOCKB", "MOCKC"],
@@ -62,6 +64,13 @@ DEFAULTS: dict = {
         "max_trades_per_day": 20,
         "max_daily_loss": 25000,
         "default_lot_size": 250,
+    },
+    "backtest": {
+        "output_dir": "data/backtests",
+        "history_request_gap_seconds": 1.0,
+        "max_days": 366,
+        "max_contracts": 2000,
+        "initial_capital": 1000000,
     },
     "storage": {
         "db_path": "data/trader.db",
@@ -119,6 +128,10 @@ def load_config(path: str = "config/config.json") -> dict:
             f"trading_mode must be PAPER or LIVE, got {cfg['trading_mode']!r}. "
             "Refusing to start (never silently fall back)."
         )
+    # Validate the list shapes. Keep the original config values: normalizing
+    # a non-empty, fully excluded list into [] would accidentally restore the
+    # default 40 stocks on the next call (an explicit [] means defaults).
+    configured_scanner(cfg)
     return cfg
 
 

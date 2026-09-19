@@ -2,6 +2,9 @@
  * stub backed by REAL payloads generated from a mock TraderApp, then visits
  * every page and checks for JS errors + expected content. */
 const fs = require("fs");
+const path = require("path");
+const os = require("os");
+const OUT = process.argv[2] || path.join(os.tmpdir(), "v2h");
 let JSDOM, VirtualConsole;
 try { ({ JSDOM, VirtualConsole } = require("jsdom")); }
 catch (e) {
@@ -10,12 +13,19 @@ catch (e) {
   process.exit(2);
 }
 
-const html = fs.readFileSync("/tmp/v2h/page.html", "utf8");
-const state = JSON.parse(fs.readFileSync("/tmp/v2h/state.json", "utf8"));
-const contract = JSON.parse(fs.readFileSync("/tmp/v2h/contract.json", "utf8"));
-const journal = JSON.parse(fs.readFileSync("/tmp/v2h/journal.json", "utf8"));
-const contractId = fs.readFileSync("/tmp/v2h/contract_id.txt", "utf8").trim();
+// Inline the locally served research script; jsdom does not fetch external
+// resources in this harness. Production loads the exact same file by URL.
+const btScript = fs.readFileSync(path.join(__dirname, "../../dashboard/static/backtest.js"), "utf8");
+const html = fs.readFileSync(path.join(OUT, "page.html"), "utf8").replace(
+  '<script src="/backtesting/assets/backtest.js" defer></script>', () => "<script>" + btScript + "</script>");
+const state = JSON.parse(fs.readFileSync(path.join(OUT, "state.json"), "utf8"));
+const contract = JSON.parse(fs.readFileSync(path.join(OUT, "contract.json"), "utf8"));
+const journal = JSON.parse(fs.readFileSync(path.join(OUT, "journal.json"), "utf8"));
+const contractId = fs.readFileSync(path.join(OUT, "contract_id.txt"), "utf8").trim();
 
+const btOptions = JSON.parse(fs.readFileSync(path.join(OUT, "backtest_options.json"), "utf8"));
+const btRuns = JSON.parse(fs.readFileSync(path.join(OUT, "backtest_runs.json"), "utf8"));
+const btResult = JSON.parse(fs.readFileSync(path.join(OUT, "backtest_result.json"), "utf8"));
 const errors = [];
 const vc = new VirtualConsole();
 vc.on("jsdomError", e => { const m = String(e && (e.detail || e)); if (!/Could not load link|Not implemented: HTMLCanvasElement/.test(m)) errors.push("jsdomError: " + m); });
@@ -34,6 +44,10 @@ const dom = new JSDOM(html, {
       if (url.startsWith("/api/state")) body = state;
       else if (url.startsWith("/api/contract/")) body = contract;
       else if (url.startsWith("/api/journal")) body = journal;
+      else if (url === "/api/backtests/options") body = btOptions;
+      else if (url === "/api/backtests") body = btRuns;
+      else if (url.endsWith("/result")) body = btResult;
+      else if (url.startsWith("/api/backtests/")) body = btRuns.runs[0];
       else return { ok: false, status: 404, json: async () => ({}) };
       return { ok: true, status: 200, json: async () => body };
     };
@@ -154,6 +168,25 @@ const htmlOf = id => window.document.getElementById(id).innerHTML || "";
   await sleep(150);
   check(/STATUS:/.test(txt("rec_status")), "recovery status: " + txt("rec_status").slice(0, 50));
   check(window.document.querySelectorAll("#rec_timeline table tr").length > 3, "startup timeline rows");
+
+  console.log("== backtesting ==");
+  window.showPage("backtesting");
+  await sleep(300);
+  check(window.document.getElementById("page_backtesting").classList.contains("shown"), "research navigation works");
+  check(window.document.querySelectorAll("#bt-symbols option").length === 42, "exactly 40 approved stocks + two indices available");
+  check(/SYNTHETIC/.test(txt("bt-status")), "synthetic source is unmistakably labelled");
+  check(!window.document.getElementById("bt-results").hidden, "completed result displayed");
+  check(/Net P&L/.test(txt("bt-metrics")), "backtest metrics render");
+  check(!!window.document.querySelector("#bt-chart svg polyline"), "equity curve is rendered");
+  check(/not Dhan data/.test(txt("bt-warnings")), "data limitations remain visible");
+  check(window.document.querySelectorAll("#bt-downloads a").length === 5, "JSON / CSV export links");
+  check(window.document.querySelectorAll("#bt-trades tbody tr").length > 0, "backtest trade history renders");
+  window.document.getElementById("bt-indices").click();
+  check(window.document.getElementById("bt-symbols").selectedOptions.length === 2, "indices-only selection works");
+  window.document.getElementById("bt-none").click();
+  check(window.document.getElementById("bt-symbols").selectedOptions.length === 0, "clear selection works");
+  window.document.getElementById("bt-all").click();
+  check(window.document.getElementById("bt-symbols").selectedOptions.length === 42, "all approved selection works");
 
   console.log("== settings ==");
   window.showPage("settings");

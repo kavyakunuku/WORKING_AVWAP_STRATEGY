@@ -25,6 +25,7 @@ from typing import Optional
 
 from common.config import get as cfg_get
 from common.version import APP_VERSION
+from common.scanner import configured_scanner
 from common.models import (
     ENTRY_SELL,
     EXIT_BUY,
@@ -403,37 +404,20 @@ class TraderApp:
             if c.instrument != "OPTSTK"
         }
 
-        underlyings = fo_stock_universe(self.master_contracts)
-        configured = cfg_get(self.cfg, "market_data.universe_stocks", [])
-        if configured:
-            underlyings, skipped = filter_configured_universe(underlyings, configured)
-            log.info(
-                "Universe restricted to %d configured liquid stocks "
-                "(%d of %d configured symbols found in the live F&O master)",
-                len(underlyings), len(underlyings), len(configured),
-            )
-            if skipped:
-                log.warning(
-                    "universe_stocks: not in live F&O master, skipped: %s", skipped
-                )
-        log.info("NIFTY F&O stock universe: %d stocks", len(underlyings))
-
-        # Optional INDEX universe (opt-in): NIFTY / BANKNIFTY / ... traded with
-        # the SAME ATM ± itm_strikes_per_side logic as the stocks.
+        configured, configured_idx = configured_scanner(self.cfg, warn=True)
+        available = fo_stock_universe(self.master_contracts)
+        underlyings = [u for u in available if u in set(configured)]
+        missing = sorted(set(configured) - set(available))
+        if missing:
+            log.warning("Approved stocks not in live F&O master, skipped: %s", missing)
         n_stocks = len(underlyings)
-        configured_idx = cfg_get(self.cfg, "market_data.universe_indices", [])
-        if configured_idx:
-            idx_available = fo_index_universe(self.master_contracts)
-            idx_kept, idx_skipped = filter_configured_universe(idx_available, configured_idx)
-            if idx_kept:
-                underlyings = underlyings + idx_kept
-                log.info("Universe includes %d configured index underlyings: %s",
-                         len(idx_kept), ", ".join(idx_kept))
-            if idx_skipped:
-                log.warning("universe_indices: not in live F&O master, skipped: %s",
-                            idx_skipped)
-        log.info("Total universe: %d underlyings (%d stocks + %d indices)",
-                 len(underlyings), n_stocks, len(underlyings) - n_stocks)
+        idx_available = fo_index_universe(self.master_contracts)
+        underlyings += [u for u in idx_available if u in set(configured_idx)]
+        missing_idx = sorted(set(configured_idx) - set(idx_available))
+        if missing_idx:
+            log.warning("Approved indices not in live F&O master, skipped: %s", missing_idx)
+        log.info("Approved scanner: %d stocks + %d indices (open positions remain monitored)",
+                 n_stocks, len(underlyings) - n_stocks)
 
         today = self.now().date()
         switch_day = int(cfg_get(self.cfg, "strategy.expiry_switch_day", 24))
@@ -927,6 +911,14 @@ class TraderApp:
         return self.risk.entry_block_reasons(len(open_pos), trades_today, daily_pnl)
 
     def _handle_entry(self, sig) -> None:
+        # The position-monitor union is exit-only outside the scanner. This
+        # also prevents a catch-up batch from re-entering a just-closed,
+        # excluded contract before the position universe is synchronized.
+        if sig.security_id not in self.universe.scanner_ids():
+            self.journal.write("ENTRY_BLOCKED", ts=sig.created_at,
+                               security_id=sig.security_id, symbol=sig.symbol,
+                               detail={"reasons": ["OUTSIDE_SCANNER"]})
+            return
         contract = self.engine.contract_for(sig.security_id)
         if contract is None:
             log.error("Entry signal for unknown contract %s; skipped", sig.security_id)
@@ -1349,7 +1341,7 @@ class TraderApp:
         }
 
         # ---- V2: index spot strip (Overview market status)
-        configured_idx = cfg_get(self.cfg, "market_data.universe_indices", []) or []
+        configured_stocks, configured_idx = configured_scanner(self.cfg)
         indices = {}
         for u in configured_idx:
             uinfo = self.universe.get(u)
@@ -1423,7 +1415,8 @@ class TraderApp:
                 "ltp_poll_seconds": cfg_get(self.cfg, "market_data.ltp_poll_seconds", 30),
                 "universe_refresh_minutes": cfg_get(self.cfg, "market_data.universe_refresh_minutes", 60),
                 "loop_tick_seconds": cfg_get(self.cfg, "market_data.loop_tick_seconds", 1),
-                "universe_stocks_count": len(cfg_get(self.cfg, "market_data.universe_stocks", []) or []),
+                "universe_stocks_count": len(configured_stocks),
+                "universe_stocks": configured_stocks,
                 "universe_indices": configured_idx,
                 "weekly_expiries": cfg_get(self.cfg, "market_data.weekly_expiries", {}) or {},
                 "history_start": cfg_get(self.cfg, "market_data.history_start", "month_start"),

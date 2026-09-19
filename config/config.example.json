@@ -1,8 +1,6 @@
 {
   "_comment": "AVWAP NIFTY F&O option-selling system. Copy to config.json and fill in your Dhan credentials. TRADING_MODE MUST be PAPER until the strategy is validated. LIVE requires explicit confirmation (see README).",
-
   "trading_mode": "PAPER",
-
   "dhan": {
     "client_id": "",
     "access_token": "",
@@ -10,7 +8,6 @@
     "http_timeout_seconds": 10,
     "instrument_master_ttl_hours": 12
   },
-
   "market_data": {
     "source": "dhan",
     "mode": "candle_poll",
@@ -21,30 +18,75 @@
     "history_start": "month_start",
     "history_lookback_days_fallback": 5,
     "universe_refresh_minutes": 60,
-    "_universe_comment": "Optional: curated list of liquid F&O stocks to trade, e.g. [\"RELIANCE\", \"HDFCBANK\", \"INFY\", ...]. Empty [] = the full ~210-stock F&O universe from the Dhan master. A curated list of 67 high-liquidity stocks ships in config/config.json.",
-    "universe_stocks": [],
-    "_indices_comment": "Optional NSE INDEX options to trade with the SAME ATM±6 ITM logic as stocks, e.g. [\"NIFTY\", \"BANKNIFTY\"]. Empty [] = none. (BSE/SENSEX is not supported by Dhan market data.)",
-    "universe_indices": [],
+    "_universe_comment": "Approved 40-stock scanner. Configuration can narrow this list, never expand it. Empty [] selects these 40, NOT the full F&O master. Unavailable symbols are logged and skipped; open positions outside the list remain exit-monitored.",
+    "universe_stocks": [
+      "RELIANCE",
+      "HDFCBANK",
+      "SBIN",
+      "ICICIBANK",
+      "INFY",
+      "TCS",
+      "BEL",
+      "HAL",
+      "BSE",
+      "DIXON",
+      "AXISBANK",
+      "BHARTIARTL",
+      "BAJFINANCE",
+      "ETERNAL",
+      "KOTAKBANK",
+      "VEDL",
+      "HINDZINC",
+      "ITC",
+      "TATASTEEL",
+      "TATAMOTORS",
+      "LT",
+      "M&M",
+      "ADANIENT",
+      "ADANIPORTS",
+      "MARUTI",
+      "HCLTECH",
+      "SUNPHARMA",
+      "TRENT",
+      "JIOFIN",
+      "COALINDIA",
+      "IOC",
+      "CANBK",
+      "INDUSINDBK",
+      "PFC",
+      "RECLTD",
+      "HINDALCO",
+      "NATIONALUM",
+      "JINDALSTEL",
+      "ONGC",
+      "BPCL"
+    ],
+    "_indices_comment": "Only NIFTY and BANKNIFTY index options are allowed. Empty [] disables index entries. BSE in the stock list means NSE-listed BSE Ltd, not SENSEX/BSE exchange options.",
+    "universe_indices": [
+      "NIFTY",
+      "BANKNIFTY"
+    ],
     "_weekly_comment": "Map of underlying -> number of CONSECUTIVE WEEKLY expiries to trade (current week first), e.g. {\"NIFTY\": 2} = current + next week. Unlisted underlyings (stocks, BANKNIFTY) use the single MONTHLY expiry with the 24th switch. Empty {} = none.",
     "weekly_expiries": {},
     "mock": {
-      "underlyings": ["MOCKA", "MOCKB", "MOCKC"],
+      "underlyings": [
+        "MOCKA",
+        "MOCKB",
+        "MOCKC"
+      ],
       "speed": 240
     }
   },
-
   "strategy": {
     "candle_interval_minutes": 15,
     "itm_strikes_per_side": 6,
     "expiry_switch_day": 24
   },
-
   "paper": {
     "fill_mode": "candle_close",
     "slippage_bps": 0,
     "next_quote_timeout_seconds": 45
   },
-
   "live": {
     "product_type": "MARGIN",
     "order_type": "MARKET",
@@ -52,7 +94,6 @@
     "order_poll_seconds": 3,
     "confirm_phrase": "I_UNDERSTAND_LIVE_TRADING"
   },
-
   "risk": {
     "quantity_per_trade": null,
     "max_open_positions": 8,
@@ -60,21 +101,25 @@
     "max_daily_loss": 25000,
     "default_lot_size": 250
   },
-
   "storage": {
     "db_path": "data/trader.db",
     "instrument_cache_dir": "data/instruments"
   },
-
   "dashboard": {
     "enabled": true,
     "host": "0.0.0.0",
     "port": 8000,
     "control_token": ""
   },
-
   "logging": {
     "level": "INFO",
     "file": "logs/trader.log"
+  },
+  "backtest": {
+    "output_dir": "data/backtests",
+    "history_request_gap_seconds": 1.0,
+    "max_days": 366,
+    "max_contracts": 2000,
+    "initial_capital": 1000000
   }
 }

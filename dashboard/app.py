@@ -31,6 +31,7 @@ import time
 from flask import Flask, jsonify, request
 
 from common.version import APP_VERSION
+from dashboard.backtesting import PANEL_HTML, register_backtests
 
 log = logging.getLogger("avwap.dashboard")
 
@@ -180,6 +181,8 @@ pre { background:#161b22; border:1px solid #30363d; border-radius:6px; padding:1
   <a data-page="positions">Positions</a>
   <a data-page="signals">Signals</a>
   <a data-page="orders">Orders</a>
+  <div class="navgroup">RESEARCH</div>
+  <a data-page="backtesting">Backtesting</a>
   <div class="navgroup">DATA</div>
   <a data-page="datahealth">Data Health</a>
   <div class="navgroup">OPERATIONS</div>
@@ -257,6 +260,8 @@ pre { background:#161b22; border:1px solid #30363d; border-radius:6px; padding:1
   <h2>Orders <span class="small">(click a row to see the raw broker response)</span></h2>
   <div id="orders_table"></div>
 </section>
+
+<section id="page_backtesting" class="page">__BACKTEST_PANEL__</section>
 
 <section id="page_datahealth" class="page">
   <h2>Feeds</h2>
@@ -480,7 +485,7 @@ function cardRow(pairs) {
 
 // ---------------- navigation ----------------
 const PAGES = ["overview","scanner","contract","positions","signals","orders",
-               "datahealth","system","alerts","journal","recovery","settings"];
+               "backtesting","datahealth","system","alerts","journal","recovery","settings"];
 let CUR = (lsGet("avwap_page") && PAGES.includes(lsGet("avwap_page"))) ? lsGet("avwap_page") : "overview";
 let scanQ = "ALL", scanType = "ALL", scanSide = "ALL";
 let contractSel = lsGet("avwap_contract") || "";
@@ -1180,11 +1185,15 @@ poll();
 </script>
 </body></html>"""
 
-PAGE_HTML = PAGE.replace("__DASH_VERSION__", DASH_VERSION)
+PAGE_HTML = (PAGE.replace("__DASH_VERSION__", DASH_VERSION)
+             .replace("__BACKTEST_PANEL__", PANEL_HTML)
+             .replace("</head>", '<link rel="stylesheet" href="/backtesting/assets/backtest.css"></head>')
+             .replace("</body>", '<script src="/backtesting/assets/backtest.js" defer></script></body>'))
 
 
 def create_dashboard(app, control_token: str = "") -> Flask:
     flask = Flask(__name__)
+    register_backtests(flask, app.cfg, control_token)
 
     @flask.route("/")
     def index():

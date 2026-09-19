@@ -1,0 +1,41 @@
+<div id="bt-root" class="bt">
+  <div class="bt-heading"><div><span class="bt-eyebrow">RESEARCH · NO LIVE ORDERS</span><h2>Strategy backtesting</h2><p>Replay the AVWAP rules. Keep research separate from your trading account.</p></div><span class="bt-pill">15 MIN · IST · SHORT OPTIONS</span></div>
+  <div class="bt-notice"><b>Know what is being tested.</b> Signal-candle-close fills are idealized. Dhan runs use fixed-contract history and the current instrument master, not a historical chain archive. AVWAP begins at the first available candle after your history-start date; lifetime coverage is not certified. Unsupported expired periods fail explicitly—rolling ATM streams are never substituted.</div>
+  <div id="bt-error" class="bt-error" role="alert" hidden></div>
+  <div class="bt-layout">
+    <aside class="bt-box">
+      <h3>New backtest</h3>
+      <form id="bt-form">
+        <label>Data source<select id="bt-source"><option value="dhan">Dhan · fixed-contract history</option><option value="demo">Synthetic demo · NOT market data</option></select></label>
+        <p id="bt-connection" class="bt-muted">Checking server configuration…</p>
+        <div class="bt-two"><label>Start date<input id="bt-start" type="date" required></label><label>End date (inclusive)<input id="bt-end" type="date" required></label></div>
+        <label>AVWAP history start<input id="bt-history" type="date" required><small>Earlier candles warm up AVWAP but cannot open trades. Earlier history improves coverage only when it is available.</small></label>
+        <label>Underlying symbols<select id="bt-symbols" multiple size="7" aria-label="Underlying symbols" required></select></label>
+        <div class="bt-actions"><button type="button" id="bt-all">All approved</button><button type="button" id="bt-indices">Indices only</button><button type="button" id="bt-none">Clear</button></div>
+        <div class="bt-two"><label>Capital baseline (₹)<input id="bt-capital" type="number" min="1" step="any" required value="1000000"></label><label>Slippage (bps / fill)<input id="bt-slippage" type="number" min="0" max="1000" step="any" value="0" required></label></div>
+        <div class="bt-two"><label>Fee per filled order (₹)<input id="bt-fee" type="number" min="0" step="any" value="0" required></label><label>Turnover costs (bps)<input id="bt-cost" type="number" min="0" max="1000" step="any" value="0" required></label></div>
+        <label class="bt-check"><input id="bt-close" type="checkbox"> Close remaining positions at the final replay candle</label>
+        <small class="bt-muted">Off by default. Otherwise open positions remain marked, not silently closed. No margin or settlement model.</small>
+        <label id="bt-token-label" hidden>Dashboard control token<input id="bt-token" type="password" autocomplete="off" placeholder="Kept only in this page; never saved"></label>
+        <button type="submit" id="bt-run" class="bt-primary">Run backtest</button>
+      </form>
+      <details><summary>Shared strategy &amp; risk settings</summary><pre id="bt-settings"></pre></details>
+    </aside>
+    <div class="bt-content">
+      <section class="bt-box">
+        <div class="bt-section-head"><h3>Run status</h3><button id="bt-cancel" class="bt-danger" hidden>Cancel run</button></div>
+        <div id="bt-status" aria-live="polite">Choose dates and symbols to begin. Trading positions and AVWAP state are never reused or modified.</div>
+        <progress id="bt-progress" max="100" value="0" hidden></progress>
+      </section>
+      <section id="bt-results" hidden>
+        <div class="bt-section-head"><h3 id="bt-result-title">Results</h3><div id="bt-downloads" class="bt-actions"></div></div>
+        <div id="bt-metrics" class="bt-metrics"></div>
+        <div class="bt-box"><h3>Mark-to-market equity <span class="bt-muted">including configured costs</span></h3><div id="bt-chart"></div></div>
+        <div class="bt-box"><h3>Data quality &amp; assumptions</h3><ul id="bt-warnings" class="bt-warnings"></ul><details><summary>Execution assumptions and coverage</summary><ul id="bt-assumptions"></ul><pre id="bt-coverage"></pre></details></div>
+        <div class="bt-box"><h3>Trades <span class="bt-muted">first 250 · full history in CSV</span></h3><div id="bt-trades" class="bt-scroll"></div></div>
+        <div class="bt-box"><h3>Daily mark-to-market P&amp;L</h3><div id="bt-daily" class="bt-scroll"></div></div>
+      </section>
+      <section class="bt-box"><div class="bt-section-head"><h3>Saved runs</h3><button id="bt-refresh">Refresh</button></div><div id="bt-runs" class="bt-scroll">No runs loaded yet.</div></section>
+    </div>
+  </div>
+</div>
